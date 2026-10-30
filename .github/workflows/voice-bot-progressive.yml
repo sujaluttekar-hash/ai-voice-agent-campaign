@@ -1,5 +1,5 @@
 name: Voice Bot Progressive CDR
-run-name: Voice_Bot_Progressive CDR append (T-2 through today)
+run-name: Voice_Bot_Progressive CDR append (T-4 through today)
 on:
   schedule:
     - cron: "0 */6 * * *"
@@ -39,7 +39,7 @@ jobs:
           with open("config.ini", "w", encoding="utf-8") as f:
               cfg.write(f)
           PY
-      - name: Pull Voice_Bot_Progressive calls (T-2 through today)
+      - name: Pull Voice_Bot_Progressive calls (T-4 through today)
         id: pull_cdr
         env:
           GITHUB_SHA: ${{ github.sha }}
@@ -51,7 +51,7 @@ jobs:
           from zoneinfo import ZoneInfo
           import os, subprocess, sys
           today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-          start_date = today - timedelta(days=2)
+          start_date = today - timedelta(days=4)
           start_arg = start_date.strftime("%d-%m-%Y")
           end_arg = today.strftime("%d-%m-%Y")
           print(f"Campaign: Voice_Bot_Progressive | Date range: {start_arg} through {end_arg}", flush=True)
