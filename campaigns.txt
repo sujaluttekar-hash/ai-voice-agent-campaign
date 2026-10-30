@@ -1,0 +1,2 @@
+# Only this campaign is included in this repository's CDR pull.
+Voice_Bot_Progressive
