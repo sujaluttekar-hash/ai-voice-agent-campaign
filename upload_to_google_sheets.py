@@ -1,4 +1,4 @@
-"""Append T-2-through-today CDR rows without changing existing sheet data or the 18-column layout."""
+"""Append T-4-through-today CDR rows without changing existing sheet data or the 18-column layout."""
 import csv
 import json
 import os
@@ -68,7 +68,7 @@ def main():
     if invalid_dates:
         raise SystemExit(f"Upload stopped: found an unparseable Call Date: {invalid_dates[0]!r}")
 
-    # Reject any API records outside the requested T-2-through-today window.
+    # Reject any API records outside the requested T-4-through-today window.
     incoming_dates = [parse_date(r[date_idx]) for r in incoming]
     if any(d < start_date or d > end_date for d in incoming_dates):
         raise SystemExit("Upload stopped: CSV contains Call Date values outside the requested refresh window.")
