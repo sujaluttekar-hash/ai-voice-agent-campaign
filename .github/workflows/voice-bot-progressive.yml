@@ -1,8 +1,8 @@
 name: Voice Bot Progressive CDR
-run-name: Voice_Bot_Progressive CDR append (T-4 through today)
+run-name: Voice_Bot_Progressive CDR daily T-1
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "30 4 * * *" # 10:00 AM Asia/Kolkata
   workflow_dispatch:
 permissions:
   contents: read
@@ -39,7 +39,7 @@ jobs:
           with open("config.ini", "w", encoding="utf-8") as f:
               cfg.write(f)
           PY
-      - name: Pull Voice_Bot_Progressive calls (T-4 through today)
+      - name: Pull Voice_Bot_Progressive calls (T-1 only)
         id: pull_cdr
         env:
           GITHUB_SHA: ${{ github.sha }}
@@ -51,10 +51,10 @@ jobs:
           from zoneinfo import ZoneInfo
           import os, subprocess, sys
           today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-          start_date = today - timedelta(days=4)
+          start_date = today - timedelta(days=1)
           start_arg = start_date.strftime("%d-%m-%Y")
-          end_arg = today.strftime("%d-%m-%Y")
-          print(f"Campaign: Voice_Bot_Progressive | Date range: {start_arg} through {end_arg}", flush=True)
+          end_arg = start_arg
+          print(f"Campaign: Voice_Bot_Progressive | T-1 only: {start_arg}", flush=True)
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output_file:
               output_file.write(f"CDR_FROM_DATE={start_arg}\nCDR_TO_DATE={end_arg}\n")
           subprocess.run([sys.executable, "-u", "ozonetel_cdr_pull.py", "--from", start_arg, "--to", end_arg], check=True)
