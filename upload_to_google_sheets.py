@@ -1,4 +1,4 @@
-"""Append T-4-through-today CDR rows without changing existing sheet data or the 18-column layout."""
+"""Append T-4-through-today CDR rows with Call ID-based deduplication and safe legacy-header migration."""
 import csv
 import json
 import os
@@ -16,7 +16,7 @@ EXPECTED_HEADERS = [
     "Call Type", "Campaign", "Caller No", "Caller_E164", "Skill",
     "Call Date", "Start Time", "Time to Answer", "End Time", "Talk Time",
     "Duration", "Agent", "Disposition", "Status", "Comments", "Agent ID",
-    "DID", "Dial Count",
+    "DID", "Dial Count", "Call ID",
 ]
 LOG_HEADERS = [
     "Run Time (IST)", "Status", "Refresh Start Date", "Refresh End Date",
@@ -90,10 +90,19 @@ def main():
     )
 
     old_values = worksheet.get_all_values()
+    legacy_headers = EXPECTED_HEADERS[:-1]
     if old_values:
-        if old_values[0] != EXPECTED_HEADERS:
+        current_headers = old_values[0]
+        if current_headers == legacy_headers:
+            # Safe in-place schema extension: preserve all existing columns/rows and add Call ID in S.
+            worksheet.update(range_name=f"S1:S{max(len(old_values), 1)}",
+                             values=[["Call ID"]] + [[""] for _ in old_values[1:]],
+                             value_input_option="RAW")
+            old_values = worksheet.get_all_values()
+        elif current_headers != EXPECTED_HEADERS:
             raise SystemExit(
-                f"Upload stopped: existing '{worksheet_name}' headers do not match the required 18 columns; "
+                f"Upload stopped: existing '{worksheet_name}' headers do not match the expected "
+                f"{len(EXPECTED_HEADERS)}-column layout (or supported legacy 19-column layout); "
                 "sheet was left unchanged."
             )
         old_rows = [
@@ -117,19 +126,23 @@ def main():
 
     def call_key(row):
         row = [clean_cell(c) for c in (row + [""] * len(EXPECTED_HEADERS))[:len(EXPECTED_HEADERS)]]
+        call_id = row[EXPECTED_HEADERS.index("Call ID")].strip()
+        if call_id:
+            # Ozonetel CallID is the primary identity and is stable across mutable call details.
+            return ("call_id", call_id)
+        # Legacy rows have no Call ID. Use a normalized composite fallback for those rows only.
         call_date = parse_date(row[date_idx])
         call_date_key = call_date.isoformat() if call_date else row[date_idx]
-        # The export has no Call ID column, so use stable call fields and exclude
-        # mutable fields such as disposition, status, comments, end time and duration.
         phone = phone_key(row[3]) or phone_key(row[2])  # Caller_E164, fallback Caller No
         return (
+            "legacy",
             call_date_key,
-            row[6].strip(),       # Start Time
-            row[1].strip(),       # Campaign
+            row[6].strip(),
+            row[1].strip(),
             phone,
-            row[11].strip(),      # Agent
-            row[0].strip(),       # Call Type
-            row[15].strip(),      # Agent ID
+            row[11].strip(),
+            row[0].strip().strip().casefold(),
+            row[15].strip(),
         )
 
     existing_call_keys = {call_key(r) for r in old_rows}
