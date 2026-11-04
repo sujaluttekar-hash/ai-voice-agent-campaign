@@ -71,6 +71,7 @@ COLUMNS = [
     ("Agent ID",        "AgentID"),
     ("DID",             "DID"),
     ("Dial Count",      "DialCount"),
+    ("Call ID",         "CallID"),
 ]
 # How each field is combined when one call has several legs.
 # CHAIN  = unique non-blank values joined with " -> " in time order
@@ -90,7 +91,7 @@ MERGE = {
 # Blank values the manual export writes as a default instead of leaving empty.
 BLANK_DEFAULTS = {"Ratings": "0.00", "Dial Count": "0"}
 # Columns Excel would otherwise mangle into 9.18065E+11 — written as text.
-TEXT_COLUMNS = {"Caller No", "Caller_E164", "DID", "Agent ID"}
+TEXT_COLUMNS = {"Caller No", "Caller_E164", "DID", "Agent ID", "Call ID"}
 # -------------------------------------------
 
 HERE = os.path.dirname(os.path.abspath(__file__))
