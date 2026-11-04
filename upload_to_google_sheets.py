@@ -1,4 +1,4 @@
-"""Append T-4-through-today CDR rows with Call ID-based deduplication and safe legacy-header migration."""
+"""Append only T-1 CDR rows using Call ID-based deduplication."""
 import csv
 import json
 import os
@@ -13,10 +13,10 @@ CSV_PATH = Path(__file__).with_name("ozonetel_cdr.csv")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 LOG_WORKSHEET_NAME = "logs"
 EXPECTED_HEADERS = [
-    "Call Type", "Campaign", "Caller No", "Caller_E164", "Skill",
+    "Call ID", "Call Type", "Campaign", "Caller No", "Caller_E164", "Skill",
     "Call Date", "Start Time", "Time to Answer", "End Time", "Talk Time",
     "Duration", "Agent", "Disposition", "Status", "Comments", "Agent ID",
-    "DID", "Dial Count", "Call ID",
+    "DID", "Dial Count",
 ]
 LOG_HEADERS = [
     "Run Time (IST)", "Status", "Refresh Start Date", "Refresh End Date",
@@ -59,6 +59,8 @@ def main():
     start_date, end_date = parse_date(from_text), parse_date(to_text)
     if not start_date or not end_date or start_date > end_date:
         raise SystemExit("Upload stopped: CDR_FROM_DATE/CDR_TO_DATE are missing or invalid.")
+    if start_date != end_date:
+        raise SystemExit("Upload stopped: this campaign uploads exactly one date (T-1) per run.")
 
     incoming = [row + [""] * (len(EXPECTED_HEADERS) - len(row)) for row in rows[1:] if any(c.strip() for c in row)]
     if not incoming:
@@ -68,10 +70,10 @@ def main():
     if invalid_dates:
         raise SystemExit(f"Upload stopped: found an unparseable Call Date: {invalid_dates[0]!r}")
 
-    # Reject any API records outside the requested T-4-through-today window.
+    # Reject any API records outside the requested date window (workflow sets this to T-1 only).
     incoming_dates = [parse_date(r[date_idx]) for r in incoming]
-    if any(d < start_date or d > end_date for d in incoming_dates):
-        raise SystemExit("Upload stopped: CSV contains Call Date values outside the requested refresh window.")
+    if any(d != start_date for d in incoming_dates):
+        raise SystemExit("Upload stopped: CSV must contain only the requested T-1 date.")
 
     credentials_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
     sheet_id = os.environ.get("GOOGLE_SHEET_ID", "").strip()
@@ -90,32 +92,35 @@ def main():
     )
 
     old_values = worksheet.get_all_values()
-    legacy_headers = EXPECTED_HEADERS[:-1]
+    old_headers_no_id = EXPECTED_HEADERS[1:]
+    old_headers_id_last = EXPECTED_HEADERS[1:] + ["Call ID"]
     if old_values:
         current_headers = old_values[0]
-        if current_headers == legacy_headers:
-            # Safe in-place schema extension: preserve all existing columns/rows and add Call ID in S.
-            worksheet.update(range_name=f"S1:S{max(len(old_values), 1)}",
-                             values=[["Call ID"]] + [[""] for _ in old_values[1:]],
-                             value_input_option="RAW")
-            old_values = worksheet.get_all_values()
+        if current_headers == old_headers_no_id:
+            # Upgrade old 18-column layout: preserve values and add blank Call ID in column A.
+            old_rows = [[""] + (r + [""] * 18)[:18] for r in old_values[1:]]
+            migrated = [EXPECTED_HEADERS] + old_rows
+            worksheet.clear()
+            worksheet.update(range_name="A1", values=migrated, value_input_option="RAW")
+            old_values = migrated
+        elif current_headers == old_headers_id_last:
+            # Reorder prior 19-column layout, where Call ID was the final column.
+            reordered = [EXPECTED_HEADERS] + [[r[18] if len(r) > 18 else ""] + (r + [""] * 18)[:18] for r in old_values[1:]]
+            worksheet.clear()
+            worksheet.update(range_name="A1", values=reordered, value_input_option="RAW")
+            old_values = reordered
         elif current_headers != EXPECTED_HEADERS:
-            raise SystemExit(
-                f"Upload stopped: existing '{worksheet_name}' headers do not match the expected "
-                f"{len(EXPECTED_HEADERS)}-column layout (or supported legacy 19-column layout); "
-                "sheet was left unchanged."
-            )
+            raise SystemExit("Upload stopped: existing worksheet headers do not match the requested layout or a supported older layout; sheet was left unchanged.")
         old_rows = [
-            (r + [""] * (len(EXPECTED_HEADERS) - len(r)))[:len(EXPECTED_HEADERS)]
+            (r + [""] * len(EXPECTED_HEADERS))[:len(EXPECTED_HEADERS)]
             for r in old_values[1:] if any(c.strip() for c in r)
         ]
     else:
         old_rows = []
         worksheet.update(range_name="A1", values=[EXPECTED_HEADERS], value_input_option="RAW")
 
-    # Append-only: never clear, rewrite, sort, or replace existing sheet rows.
-    # Deduplicate by call identity, not the entire row: call disposition/comments can
-    # change between scheduled pulls, which otherwise makes the same call append twice.
+    # Existing values are preserved during one-time schema migration; new calls are append-only.
+    # Deduplicate by Call ID; legacy rows without IDs use a normalized composite fallback.
     def clean_cell(value):
         value = str(value or "").strip()
         # Sheets strips the leading apostrophe used to force phone/ID values to text.
@@ -133,16 +138,16 @@ def main():
         # Legacy rows have no Call ID. Use a normalized composite fallback for those rows only.
         call_date = parse_date(row[date_idx])
         call_date_key = call_date.isoformat() if call_date else row[date_idx]
-        phone = phone_key(row[3]) or phone_key(row[2])  # Caller_E164, fallback Caller No
+        phone = phone_key(row[4]) or phone_key(row[3])  # Caller_E164, fallback Caller No
         return (
             "legacy",
             call_date_key,
-            row[6].strip(),
-            row[1].strip(),
+            row[7].strip(),       # Start Time
+            row[2].strip(),       # Campaign
             phone,
-            row[11].strip(),
-            row[0].strip().strip().casefold(),
-            row[15].strip(),
+            row[12].strip(),      # Agent
+            row[1].strip().casefold(),
+            row[16].strip(),      # Agent ID
         )
 
     existing_call_keys = {call_key(r) for r in old_rows}
