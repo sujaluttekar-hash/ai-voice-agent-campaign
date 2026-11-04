@@ -53,6 +53,7 @@ CAMPAIGN_FILE = "campaigns.txt"   # one campaign per line; blank file = keep all
 # Output columns in the EXACT order of the manual export, mapped to API fields.
 # Confirmed against a real manual dump + a real API sample.
 COLUMNS = [
+    ("Call ID",         "CallID"),
     ("Call Type",       "Type"),
     ("Campaign",        "CampaignName"),
     ("Caller No",       "CallerID"),
@@ -71,7 +72,6 @@ COLUMNS = [
     ("Agent ID",        "AgentID"),
     ("DID",             "DID"),
     ("Dial Count",      "DialCount"),
-    ("Call ID",         "CallID"),
 ]
 # How each field is combined when one call has several legs.
 # CHAIN  = unique non-blank values joined with " -> " in time order
